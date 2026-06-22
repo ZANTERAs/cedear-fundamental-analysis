@@ -30,7 +30,7 @@ valuation view — with rich terminal output and an optional polished PDF report
 ## Installation
 
 ```bash
-git clone https://github.com/<your-username>/cedear-fundamental-analysis.git
+git clone https://github.com/ZANTERA/cedear-fundamental-analysis.git
 cd cedear-fundamental-analysis
 pip install -r requirements.txt
 ```
