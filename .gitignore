@@ -1,0 +1,19 @@
+# Generated reports
+*.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Unrelated project living in the same parent folder
+cedear_portfolio_ai/
