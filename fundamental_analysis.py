@@ -1411,6 +1411,45 @@ def build_pdf(path: str, data: dict, peer_rows: Optional[list] = None,
 
 # ── Main analysis ─────────────────────────────────────────────────────────────
 
+def auto_wacc(info: dict) -> float:
+    """WACC a partir de la beta (CAPM + deuda after-tax). Misma fórmula que usaba main()."""
+    beta = float(info.get("beta") or 1.0)
+    ke = RISK_FREE_RATE + beta * EQUITY_RISK_PREMIUM
+    kd_after_tax = RISK_FREE_RATE * (1 - TAX_RATE)
+    return ke * EQUITY_WEIGHT + kd_after_tax * (1 - EQUITY_WEIGHT)
+
+
+def valuate(
+    info: dict,
+    cashflow,
+    financials,
+    growth_rate: float = 0.08,
+    wacc: Optional[float] = None,
+    years: int = 10,
+    include_mc: bool = True,
+    n_sims: int = 10000,
+) -> dict:
+    """
+    Pure valuation (no I/O, no network): DCF, Graham, DDM, EV/EBITDA, composite and,
+    optionally, Monte Carlo DCF. `wacc=None` -> auto_wacc(info).
+    """
+    if wacc is None:
+        wacc = auto_wacc(info)
+    dcf_val   = dcf_valuation(info, cashflow, growth_rate, wacc, years)
+    graham    = graham_number(info)
+    ddm_val   = ddm_valuation(info)
+    ev_val    = ev_ebitda_valuation(info, financials)
+    models    = [v for v in [dcf_val, graham, ddm_val, ev_val] if v is not None]
+    composite = sum(models) / len(models) if models else None
+    mc = monte_carlo_dcf(info, cashflow, growth_rate, wacc, years, n_sims=n_sims) if include_mc else None
+    return dict(
+        dcf_val=dcf_val, graham=graham, ddm_val=ddm_val, ev_val=ev_val,
+        composite=composite, mc=mc, wacc=wacc,
+        growth_rate=growth_rate, years=years,
+        current_price=safe_get(info, "currentPrice", "regularMarketPrice"),
+    )
+
+
 def analyze(
     ticker: str,
     growth_rate: float,
@@ -1465,12 +1504,9 @@ def analyze(
         "peg":       safe_get(info, "pegRatio"),
     }
 
-    dcf_val   = dcf_valuation(info, cashflow, growth_rate, wacc, years)
-    graham    = graham_number(info)
-    ddm_val   = ddm_valuation(info)
-    ev_val    = ev_ebitda_valuation(info, financials)
-    models    = [v for v in [dcf_val, graham, ddm_val, ev_val] if v is not None]
-    composite = sum(models) / len(models) if models else None
+    v         = valuate(info, cashflow, growth_rate, wacc, years, include_mc=False)
+    dcf_val, graham, ddm_val = v["dcf_val"], v["graham"], v["ddm_val"]
+    ev_val, composite        = v["ev_val"], v["composite"]
 
     data = dict(
         info=info, financials=financials, cashflow=cashflow,
@@ -1567,10 +1603,10 @@ Examples:
     wacc = args.wacc
     if wacc is None:
         try:
-            beta = float(yf.Ticker(args.ticker).info.get("beta") or 1.0)
+            info = yf.Ticker(args.ticker).info
+            beta = float(info.get("beta") or 1.0)
             ke = RISK_FREE_RATE + beta * EQUITY_RISK_PREMIUM
-            kd_after_tax = RISK_FREE_RATE * (1 - TAX_RATE)
-            wacc = ke * EQUITY_WEIGHT + kd_after_tax * (1 - EQUITY_WEIGHT)
+            wacc = auto_wacc(info)
             console.print(f"[dim]Auto-computed WACC: {wacc*100:.2f}%  (beta={beta:.2f}  Ke={ke*100:.2f}%)[/dim]")
         except Exception:
             wacc = DEFAULT_WACC
