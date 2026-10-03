@@ -16,7 +16,8 @@ valuation view — with rich terminal output and an optional polished PDF report
   - **Graham Number** — `sqrt(22.5 * EPS * BVPS)`
   - **EV/EBITDA** using sector-median multiples
   - **DDM** (Gordon Growth, for dividend payers)
-  - **Composite** average of all applicable models, with an under/over-valued verdict
+  - **Composite** average of the models that produced a positive value (models returning
+    N/A, 0 or a negative value are left out), with an under/over-valued verdict
 - **Monte Carlo DCF** (`--mc`) — probabilistic valuation sampling growth, WACC, and terminal
   growth; reports P10–P90 and the probability the stock is undervalued.
 - **Peer comparison** (`--peers`) — same-industry companies from Yahoo Finance, with a
@@ -36,6 +37,8 @@ pip install -r requirements.txt
 ```
 
 Requires Python 3.10+.
+
+Tests (no network): `pip install pytest && python -m pytest -q tests`
 
 ---
 
@@ -82,6 +85,10 @@ python fundamental_analysis.py MSFT --growth 0.12 --wacc 0.10 --mc --sims 50000 
 - **DCF** projects free cash flow (`Operating CF + CapEx`) at the chosen growth rate, discounts
   it, and adds a Gordon-growth terminal value, then nets out debt. Companies with **negative
   FCF** (heavy-capex growth names) are skipped rather than producing a misleading number.
+- **DDM** uses the **same cost of equity as the DCF**: `Ke` is backed out of the WACC in use
+  (so a `--wacc` override also moves the DDM), instead of being recomputed from the raw beta.
+  Dividends grow at `g = 4%`; if `Ke - g < 3pp` the DDM is reported as N/A, because the Gordon
+  formula explodes as `Ke` approaches `g`.
 - **Defaults:** risk-free rate `4.5%`, equity risk premium `5.5%`, terminal growth `2.5%`.
 
 ---
