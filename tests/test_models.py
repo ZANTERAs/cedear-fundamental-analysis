@@ -22,3 +22,4 @@ def test_ddm_not_applicable_below_min_spread():
 def test_composite_drops_none_zero_and_negative():
     assert fa.composite_value([100.0, None, 0.0, -5.0, 50.0]) == 75.0
     assert fa.composite_value([None, 0.0]) is None
+    assert fa.composite_value([float("nan"), 40.0]) == 40.0   # e.g. DCF with NaN capex
