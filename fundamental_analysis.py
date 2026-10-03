@@ -30,6 +30,8 @@ TERMINAL_GROWTH = 0.025
 DEFAULT_WACC = 0.09
 TAX_RATE = 0.21
 EQUITY_WEIGHT = 0.70
+DIVIDEND_GROWTH = 0.04
+DDM_MIN_SPREAD = 0.03   # DDM not applicable when Ke - g_div is below this
 
 SECTOR_MULTIPLES = {
     "Technology": 20.0,
@@ -217,17 +219,29 @@ def graham_number(info: dict) -> Optional[float]:
     return None
 
 
-def ddm_valuation(info: dict) -> Optional[float]:
+def cost_of_equity(info: dict, wacc: Optional[float] = None) -> float:
+    """Ke consistent with the DCF: backed out of `wacc` when given, else CAPM from beta."""
+    if wacc is not None:
+        kd_after_tax = RISK_FREE_RATE * (1 - TAX_RATE)
+        return (wacc - kd_after_tax * (1 - EQUITY_WEIGHT)) / EQUITY_WEIGHT
+    beta = float(safe_get(info, "beta", default=1.0) or 1.0)
+    return RISK_FREE_RATE + beta * EQUITY_RISK_PREMIUM
+
+
+def ddm_valuation(info: dict, wacc: Optional[float] = None) -> Optional[float]:
     div_rate = safe_get(info, "dividendRate")
     if not div_rate or float(div_rate) == 0:
         return None
-    beta = float(safe_get(info, "beta", default=1.0) or 1.0)
-    ke   = RISK_FREE_RATE + beta * EQUITY_RISK_PREMIUM
-    g_div = 0.04
-    d1    = float(div_rate) * (1 + g_div)
-    if ke <= g_div:
+    ke = cost_of_equity(info, wacc)
+    if ke - DIVIDEND_GROWTH < DDM_MIN_SPREAD:
         return None
-    return d1 / (ke - g_div)
+    return float(div_rate) * (1 + DIVIDEND_GROWTH) / (ke - DIVIDEND_GROWTH)
+
+
+def composite_value(values) -> Optional[float]:
+    """Average of the models that produced a usable value (drops None, 0 and negatives)."""
+    usable = [v for v in values if v is not None and v > 0]
+    return sum(usable) / len(usable) if usable else None
 
 
 def ev_ebitda_valuation(info: dict, financials_df) -> Optional[float]:
@@ -867,7 +881,7 @@ def render_terminal(data: dict):
     )
     vt.add_row(
         "DDM  (Gordon Growth  g=4%)",
-        f"${ddm_val:.2f}" if ddm_val else "[dim]N/A (no dividend)[/dim]",
+        f"${ddm_val:.2f}" if ddm_val else "[dim]N/A (no dividend or Ke-g < 3pp)[/dim]",
         color_upside(upside(ddm_val)) if ddm_val else "--",
     )
     vt.add_section()
@@ -1120,7 +1134,7 @@ def build_pdf(path: str, data: dict, peer_rows: Optional[list] = None,
         iv_row(f"DCF  (g={growth_rate*100:.1f}%  WACC={wacc*100:.2f}%  {years}yr)", dcf_val, "N/A (negative FCF)"),
         iv_row("Graham Number  sqrt(22.5 x EPS x BVPS)", graham),
         iv_row(f"EV/EBITDA  ({sector_multiple:.1f}x  {sector} median)", ev_val),
-        iv_row("DDM  Gordon Growth  g=4%", ddm_val, "N/A (no dividend)"),
+        iv_row("DDM  Gordon Growth  g=4%", ddm_val, "N/A (no dividend or Ke-g < 3pp)"),
         ["Composite Average",
          f"${composite:.2f}" if composite else "N/A",
          plain_upside(upside(composite))],
@@ -1467,10 +1481,9 @@ def analyze(
 
     dcf_val   = dcf_valuation(info, cashflow, growth_rate, wacc, years)
     graham    = graham_number(info)
-    ddm_val   = ddm_valuation(info)
+    ddm_val   = ddm_valuation(info, wacc)
     ev_val    = ev_ebitda_valuation(info, financials)
-    models    = [v for v in [dcf_val, graham, ddm_val, ev_val] if v is not None]
-    composite = sum(models) / len(models) if models else None
+    composite = composite_value([dcf_val, graham, ddm_val, ev_val])
 
     data = dict(
         info=info, financials=financials, cashflow=cashflow,
