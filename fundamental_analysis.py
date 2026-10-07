@@ -228,9 +228,28 @@ def cost_of_equity(info: dict, wacc: Optional[float] = None) -> float:
     return RISK_FREE_RATE + beta * EQUITY_RISK_PREMIUM
 
 
+def trailing_dividend(info: dict) -> Optional[float]:
+    """
+    Dividends actually paid over the last 12 months, in the quote currency.
+
+    Uses trailingAnnualDividendRate (paid) instead of dividendRate (Yahoo's forward
+    estimate, which is sometimes a single payment). Returns None when it cannot be
+    trusted to be in the price's currency: for ADRs whose statements are in another
+    currency Yahoo reports the trailing figure in the statements' currency
+    (e.g. PBR shows the BRL dividend of PETR3 against a USD price).
+    """
+    div = safe_get(info, "trailingAnnualDividendRate")
+    if not div or float(div) <= 0:
+        return None
+    currency, fin_currency = info.get("currency"), info.get("financialCurrency")
+    if currency and fin_currency and currency != fin_currency:
+        return None
+    return float(div)
+
+
 def ddm_valuation(info: dict, wacc: Optional[float] = None) -> Optional[float]:
-    div_rate = safe_get(info, "dividendRate")
-    if not div_rate or float(div_rate) == 0:
+    div_rate = trailing_dividend(info)
+    if div_rate is None:
         return None
     ke = cost_of_equity(info, wacc)
     if ke - DIVIDEND_GROWTH < DDM_MIN_SPREAD:
@@ -881,7 +900,7 @@ def render_terminal(data: dict):
     )
     vt.add_row(
         "DDM  (Gordon Growth  g=4%)",
-        f"${ddm_val:.2f}" if ddm_val else "[dim]N/A (no dividend or Ke-g < 3pp)[/dim]",
+        f"${ddm_val:.2f}" if ddm_val else "[dim]N/A (no 12m dividend, ADR currency or Ke-g < 3pp)[/dim]",
         color_upside(upside(ddm_val)) if ddm_val else "--",
     )
     vt.add_section()
@@ -1134,7 +1153,7 @@ def build_pdf(path: str, data: dict, peer_rows: Optional[list] = None,
         iv_row(f"DCF  (g={growth_rate*100:.1f}%  WACC={wacc*100:.2f}%  {years}yr)", dcf_val, "N/A (negative FCF)"),
         iv_row("Graham Number  sqrt(22.5 x EPS x BVPS)", graham),
         iv_row(f"EV/EBITDA  ({sector_multiple:.1f}x  {sector} median)", ev_val),
-        iv_row("DDM  Gordon Growth  g=4%", ddm_val, "N/A (no dividend or Ke-g < 3pp)"),
+        iv_row("DDM  Gordon Growth  g=4%", ddm_val, "N/A (no 12m dividend, ADR currency or Ke-g < 3pp)"),
         ["Composite Average",
          f"${composite:.2f}" if composite else "N/A",
          plain_upside(upside(composite))],
