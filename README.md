@@ -89,6 +89,11 @@ python fundamental_analysis.py MSFT --growth 0.12 --wacc 0.10 --mc --sims 50000 
   (so a `--wacc` override also moves the DDM), instead of being recomputed from the raw beta.
   Dividends grow at `g = 4%`; if `Ke - g < 3pp` the DDM is reported as N/A, because the Gordon
   formula explodes as `Ke` approaches `g`.
+- **DDM dividend** is the one actually **paid over the last 12 months**, summed from the dividend
+  history of the listed security (`Ticker.dividends`), so it is per ADR for ADRs and in the quote
+  currency. Yahoo's `dividendRate` (forward) is sometimes a single payment, and its
+  `trailingAnnualDividendRate` is per ordinary share for some ADRs (BP, SHEL, BHP) or in the
+  statements' currency (PBR). No dividend in the last 12 months -> DDM N/A.
 - **Defaults:** risk-free rate `4.5%`, equity risk premium `5.5%`, terminal growth `2.5%`.
 
 ---
