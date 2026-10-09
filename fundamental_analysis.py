@@ -11,7 +11,7 @@ import argparse
 import math
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
+from datetime import date, timedelta
 from typing import Optional
 
 import yfinance as yf
@@ -228,9 +228,30 @@ def cost_of_equity(info: dict, wacc: Optional[float] = None) -> float:
     return RISK_FREE_RATE + beta * EQUITY_RISK_PREMIUM
 
 
-def ddm_valuation(info: dict, wacc: Optional[float] = None) -> Optional[float]:
-    div_rate = safe_get(info, "dividendRate")
-    if not div_rate or float(div_rate) == 0:
+def trailing_dividend(dividends, as_of: Optional[date] = None) -> Optional[float]:
+    """
+    Dividends paid over the 12 months up to `as_of` (default: today), summed from the
+    dividend history of the listed security (`yf.Ticker(t).dividends`).
+
+    That history comes with the price series, so it is per listed share (per ADR for
+    ADRs) and in the quote currency. Yahoo's info fields are not: `dividendRate` is a
+    forward estimate that is sometimes a single payment, and `trailingAnnualDividendRate`
+    is per ordinary share for some ADRs (BP, SHEL, BHP) or in the statements' currency (PBR).
+    """
+    if dividends is None or len(dividends) == 0:
+        return None
+    as_of = as_of or date.today()
+    start = as_of - timedelta(days=365)
+    # Limitation: fixed 365-day window; ex-date drift can leave 3 quarterly payments inside (MU).
+    # Anchoring the window at the last ex-date fixes that but double-counts annual payers (MBG).
+    total = sum(float(v) for d, v in dividends.items() if start < d.date() <= as_of)
+    return total if total > 0 else None
+
+
+def ddm_valuation(info: dict, wacc: Optional[float] = None, dividends=None,
+                  as_of: Optional[date] = None) -> Optional[float]:
+    div_rate = trailing_dividend(dividends, as_of)
+    if div_rate is None:
         return None
     ke = cost_of_equity(info, wacc)
     if ke - DIVIDEND_GROWTH < DDM_MIN_SPREAD:
@@ -881,7 +902,7 @@ def render_terminal(data: dict):
     )
     vt.add_row(
         "DDM  (Gordon Growth  g=4%)",
-        f"${ddm_val:.2f}" if ddm_val else "[dim]N/A (no dividend or Ke-g < 3pp)[/dim]",
+        f"${ddm_val:.2f}" if ddm_val else "[dim]N/A (no 12m dividend or Ke-g < 3pp)[/dim]",
         color_upside(upside(ddm_val)) if ddm_val else "--",
     )
     vt.add_section()
@@ -1134,7 +1155,7 @@ def build_pdf(path: str, data: dict, peer_rows: Optional[list] = None,
         iv_row(f"DCF  (g={growth_rate*100:.1f}%  WACC={wacc*100:.2f}%  {years}yr)", dcf_val, "N/A (negative FCF)"),
         iv_row("Graham Number  sqrt(22.5 x EPS x BVPS)", graham),
         iv_row(f"EV/EBITDA  ({sector_multiple:.1f}x  {sector} median)", ev_val),
-        iv_row("DDM  Gordon Growth  g=4%", ddm_val, "N/A (no dividend or Ke-g < 3pp)"),
+        iv_row("DDM  Gordon Growth  g=4%", ddm_val, "N/A (no 12m dividend or Ke-g < 3pp)"),
         ["Composite Average",
          f"${composite:.2f}" if composite else "N/A",
          plain_upside(upside(composite))],
@@ -1481,7 +1502,7 @@ def analyze(
 
     dcf_val   = dcf_valuation(info, cashflow, growth_rate, wacc, years)
     graham    = graham_number(info)
-    ddm_val   = ddm_valuation(info, wacc)
+    ddm_val   = ddm_valuation(info, wacc, t.dividends)
     ev_val    = ev_ebitda_valuation(info, financials)
     composite = composite_value([dcf_val, graham, ddm_val, ev_val])
 
