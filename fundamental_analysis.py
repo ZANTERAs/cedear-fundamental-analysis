@@ -242,7 +242,7 @@ def trailing_dividend(dividends, as_of: Optional[date] = None) -> Optional[float
         return None
     as_of = as_of or date.today()
     start = as_of - timedelta(days=365)
-    # ponytail: fixed 365-day window; ex-date drift can leave 3 quarterly payments inside (MU).
+    # Limitation: fixed 365-day window; ex-date drift can leave 3 quarterly payments inside (MU).
     # Anchoring the window at the last ex-date fixes that but double-counts annual payers (MBG).
     total = sum(float(v) for d, v in dividends.items() if start < d.date() <= as_of)
     return total if total > 0 else None
