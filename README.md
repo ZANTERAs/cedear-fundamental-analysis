@@ -94,6 +94,8 @@ python fundamental_analysis.py MSFT --growth 0.12 --wacc 0.10 --mc --sims 50000 
   currency. Yahoo's `dividendRate` (forward) is sometimes a single payment, and its
   `trailingAnnualDividendRate` is per ordinary share for some ADRs (BP, SHEL, BHP) or in the
   statements' currency (PBR). No dividend in the last 12 months -> DDM N/A.
+  *Limitation:* special (one-off) dividends paid in those 12 months are summed in, and the
+  DDM treats them as recurring.
 - **Defaults:** risk-free rate `4.5%`, equity risk premium `5.5%`, terminal growth `2.5%`.
 
 ---
