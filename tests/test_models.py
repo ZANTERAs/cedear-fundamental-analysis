@@ -1,4 +1,5 @@
 """Unit tests for DDM cost of equity and composite filtering (no network)."""
+import sys
 from datetime import date
 
 import pandas as pd
@@ -58,3 +59,31 @@ def test_valuate_passes_dividend_history_to_ddm():
     v = fa.valuate({}, None, None, wacc=0.07, include_mc=False, dividends=FOUR, as_of=AS_OF)
     assert v["ddm_val"] == pytest.approx(fa.ddm_valuation({}, 0.07, FOUR, AS_OF))
     assert fa.valuate({}, None, None, wacc=0.07, include_mc=False)["ddm_val"] is None
+
+
+class FakeTicker:
+    """yf.Ticker with simulated data, so the CLI runs end to end without network."""
+    def __init__(self, ticker):
+        self.info = {"shortName": "Sim Corp", "sector": "Technology", "beta": 1.2, "currentPrice": 50.0,
+                     "sharesOutstanding": 1e9, "totalDebt": 2e9, "totalCash": 1e9, "trailingEps": 3.0,
+                     "bookValue": 20.0, "ebitda": 8e9}
+        self.cashflow = pd.DataFrame({pd.Timestamp("2025-12-31"): [6e9, -1e9]}, index=["Operating Cash Flow", "Capital Expenditure"])
+        self.financials = pd.DataFrame({pd.Timestamp("2025-12-31"): [8e9]}, index=["EBITDA"])
+        self.dividends = FOUR
+
+
+@pytest.mark.parametrize("args, wacc", [([], None), (["--wacc", "0.11"], 0.11)])
+def test_cli_end_to_end_uses_the_wacc(monkeypatch, args, wacc):
+    monkeypatch.setattr(fa.yf, "Ticker", FakeTicker)
+    monkeypatch.setattr(sys, "argv", ["fundamental_analysis.py", "SIM", *args])
+    calls, real = [], fa.valuate
+    def spy(**kw):                      # a positional argument fails here: every call names them
+        calls.append((kw, real(**kw)))
+        return calls[-1][1]
+    monkeypatch.setattr(fa, "valuate", spy)
+    fa.main()
+    sim = FakeTicker("SIM")
+    expected = wacc or fa.auto_wacc(sim.info)
+    (kw, v), = calls
+    assert kw["wacc"] == v["wacc"] == pytest.approx(expected) and kw["growth_rate"] == 0.08 and kw["years"] == 10
+    assert v["dcf_val"] == pytest.approx(fa.dcf_valuation(sim.info, sim.cashflow, 0.08, expected, 10))

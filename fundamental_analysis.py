@@ -1541,8 +1541,8 @@ def analyze(
         "peg":       safe_get(info, "pegRatio"),
     }
 
-    v         = valuate(info, cashflow, financials, growth_rate, wacc, years, include_mc=False,
-                        dividends=t.dividends)
+    v         = valuate(info=info, cashflow=cashflow, financials=financials, growth_rate=growth_rate,
+                        wacc=wacc, years=years, include_mc=False, dividends=t.dividends)
     dcf_val, graham, ddm_val = v["dcf_val"], v["graham"], v["ddm_val"]
     ev_val, composite        = v["ev_val"], v["composite"]
 
