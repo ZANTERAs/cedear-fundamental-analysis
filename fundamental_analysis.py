@@ -32,6 +32,7 @@ TAX_RATE = 0.21
 EQUITY_WEIGHT = 0.70
 DIVIDEND_GROWTH = 0.04
 DDM_MIN_SPREAD = 0.03   # DDM not applicable when Ke - g_div is below this
+DDM_MIN_PAYING_YEARS = 2   # DDM needs payments in at least 2 of the last 3 years (recurring dividend)
 
 SECTOR_MULTIPLES = {
     "Technology": 20.0,
@@ -248,8 +249,21 @@ def trailing_dividend(dividends, as_of: Optional[date] = None) -> Optional[float
     return total if total > 0 else None
 
 
+def paying_years(dividends, as_of: Optional[date] = None, years: int = 3) -> int:
+    """How many of the last `years` 365-day windows back from `as_of` (default: today) contain a payment."""
+    if dividends is None or len(dividends) == 0:
+        return 0
+    as_of = as_of or date.today()
+    paid = [d.date() for d, v in dividends.items() if float(v) > 0]
+    return sum(any(as_of - timedelta(days=365 * (k + 1)) < d <= as_of - timedelta(days=365 * k) for d in paid)
+               for k in range(years))
+
+
 def ddm_valuation(info: dict, wacc: Optional[float] = None, dividends=None,
                   as_of: Optional[date] = None) -> Optional[float]:
+    # Gordon assumes a recurring dividend: a one-off or brand-new payer gets no DDM.
+    if paying_years(dividends, as_of) < DDM_MIN_PAYING_YEARS:
+        return None
     div_rate = trailing_dividend(dividends, as_of)
     if div_rate is None:
         return None
@@ -902,7 +916,7 @@ def render_terminal(data: dict):
     )
     vt.add_row(
         "DDM  (Gordon Growth  g=4%)",
-        f"${ddm_val:.2f}" if ddm_val else "[dim]N/A (no 12m dividend or Ke-g < 3pp)[/dim]",
+        f"${ddm_val:.2f}" if ddm_val else "[dim]N/A (no recurring dividend or Ke-g < 3pp)[/dim]",
         color_upside(upside(ddm_val)) if ddm_val else "--",
     )
     vt.add_section()
@@ -1155,7 +1169,7 @@ def build_pdf(path: str, data: dict, peer_rows: Optional[list] = None,
         iv_row(f"DCF  (g={growth_rate*100:.1f}%  WACC={wacc*100:.2f}%  {years}yr)", dcf_val, "N/A (negative FCF)"),
         iv_row("Graham Number  sqrt(22.5 x EPS x BVPS)", graham),
         iv_row(f"EV/EBITDA  ({sector_multiple:.1f}x  {sector} median)", ev_val),
-        iv_row("DDM  Gordon Growth  g=4%", ddm_val, "N/A (no 12m dividend or Ke-g < 3pp)"),
+        iv_row("DDM  Gordon Growth  g=4%", ddm_val, "N/A (no recurring dividend or Ke-g < 3pp)"),
         ["Composite Average",
          f"${composite:.2f}" if composite else "N/A",
          plain_upside(upside(composite))],
