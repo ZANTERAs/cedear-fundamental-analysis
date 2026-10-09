@@ -94,6 +94,9 @@ python fundamental_analysis.py MSFT --growth 0.12 --wacc 0.10 --mc --sims 50000 
   currency. Yahoo's `dividendRate` (forward) is sometimes a single payment, and its
   `trailingAnnualDividendRate` is per ordinary share for some ADRs (BP, SHEL, BHP) or in the
   statements' currency (PBR). No dividend in the last 12 months -> DDM N/A.
+- **DDM needs a recurring dividend:** payments in at least 2 of the last 3 years (365-day windows
+  back from the valuation date). A one-off payment (e.g. CAAP's single dividend in 2026) or a payer
+  that just started -> DDM N/A ("non-recurring dividend").
   *Limitation:* special (one-off) dividends paid in those 12 months are summed in, and the
   DDM treats them as recurring.
 - **Defaults:** risk-free rate `4.5%`, equity risk premium `5.5%`, terminal growth `2.5%`.
