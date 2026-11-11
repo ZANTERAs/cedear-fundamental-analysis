@@ -14,7 +14,8 @@ def divs(*payments, tz=None):
     return pd.Series([a for _, a in payments], index=pd.DatetimeIndex([d for d, _ in payments], tz=tz))
 
 
-FOUR = divs(("2025-12-01", 1.0), ("2026-03-01", 1.0), ("2026-06-01", 1.0), ("2026-09-01", 1.0))
+PRIOR_YEAR = (("2024-12-01", 1.0), ("2025-03-01", 1.0), ("2025-06-01", 1.0), ("2025-09-01", 1.0))
+FOUR = divs(*PRIOR_YEAR, ("2025-12-01", 1.0), ("2026-03-01", 1.0), ("2026-06-01", 1.0), ("2026-09-01", 1.0))
 
 
 def test_ddm_uses_ke_backed_out_of_wacc():
@@ -40,7 +41,7 @@ def test_composite_drops_none_zero_and_negative():
 def test_ddm_uses_paid_dividends_not_info_fields():
     # BP ADR: Yahoo's info gives the forward rate and a trailing per ordinary share; the history is per ADR.
     info = {"dividendRate": 2.02, "trailingAnnualDividendRate": 0.336, "currency": "USD", "financialCurrency": "USD"}
-    bp = divs(("2025-11-07", 0.499), ("2026-02-13", 0.499), ("2026-05-08", 0.499), ("2026-08-14", 0.52))
+    bp = divs(*PRIOR_YEAR, ("2025-11-07", 0.499), ("2026-02-13", 0.499), ("2026-05-08", 0.499), ("2026-08-14", 0.52))
     ke = fa.cost_of_equity(info, wacc=0.07)
     assert fa.ddm_valuation(info, 0.07, bp, AS_OF) == pytest.approx(2.017 * 1.04 / (ke - 0.04))
     assert fa.ddm_valuation(info, wacc=0.07) is None                       # no history -> no DDM
@@ -52,3 +53,16 @@ def test_trailing_dividend_window():
     assert fa.trailing_dividend(divs(("2026-09-01", 0.5), tz="America/New_York"), AS_OF) == 0.5
     assert fa.trailing_dividend(divs(("2024-01-01", 1.0)), AS_OF) is None   # stopped paying
     assert fa.trailing_dividend(divs(), AS_OF) is None and fa.trailing_dividend(None) is None
+
+
+def test_ddm_needs_a_recurring_dividend():
+    caap = divs(("2026-08-31", 0.908))                                     # single payment in its history
+    assert fa.paying_years(caap, AS_OF) == 1
+    assert fa.trailing_dividend(caap, AS_OF) == pytest.approx(0.908)      # it is inside the 12m window...
+    assert fa.ddm_valuation({}, 0.07, caap, AS_OF) is None                 # ...but not recurring -> N/A
+    annual = divs(("2024-05-10", 1.0), ("2025-05-09", 1.1), ("2026-05-08", 1.2))
+    assert fa.paying_years(annual, AS_OF) == 3
+    ke = fa.cost_of_equity({}, wacc=0.07)
+    assert fa.ddm_valuation({}, 0.07, annual, AS_OF) == pytest.approx(1.2 * 1.04 / (ke - 0.04))
+    two_of_three = divs(("2024-05-10", 1.0), ("2026-05-08", 1.2))          # skipped a year: still 2 of 3
+    assert fa.paying_years(two_of_three, AS_OF) == 2 and fa.ddm_valuation({}, 0.07, two_of_three, AS_OF)
